@@ -27,6 +27,9 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 
+CHANGES_MAX_ITEMS = 3
+
+
 def now_iso() -> str:
   return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
@@ -73,8 +76,29 @@ def write_json_atomic(path: Path, data: object, *, indent: int = 4) -> None:
     os.replace(tmp_path, path)
 
 
+def normalize_device_for_write(device: dict) -> dict:
+    out: dict = {}
+    raw_changes = device.get("changes")
+    for k, v in device.items():
+        if k == "changes":
+            continue
+        out[k] = v
+
+    changes: list[dict] = []
+    if isinstance(raw_changes, list):
+        for ev in raw_changes:
+            if isinstance(ev, dict):
+                changes.append(ev)
+    if len(changes) > CHANGES_MAX_ITEMS:
+        changes = changes[-CHANGES_MAX_ITEMS:]
+    out["changes"] = changes
+
+    return out
+
+
 def write_devices_json_atomic(path: Path, devices: list[dict]) -> None:
-    write_json_atomic(path, devices, indent=4)
+    normalized = [normalize_device_for_write(d) for d in devices]
+    write_json_atomic(path, normalized, indent=4)
 
 
 def ensure_bool(value: object) -> Optional[bool]:
@@ -106,21 +130,23 @@ def split_ip_port(connect_key: str) -> tuple[Optional[str], Optional[int]]:
     return ip_part, port
 
 
-def ensure_changes_list(device: dict) -> list[dict]:
+def ensure_changes_list(device: dict, *, max_items: int = CHANGES_MAX_ITEMS) -> list[dict]:
     changes = device.get("changes")
     if isinstance(changes, list):
         out: list[dict] = []
         for item in changes:
             if isinstance(item, dict):
                 out.append(item)
+        if len(out) > max_items:
+            out = out[-max_items:]
         device["changes"] = out
         return out
     device["changes"] = []
     return device["changes"]
 
 
-def append_change(device: dict, event: dict, max_items: int = 10) -> None:
-    changes = ensure_changes_list(device)
+def append_change(device: dict, event: dict, max_items: int = CHANGES_MAX_ITEMS) -> None:
+    changes = ensure_changes_list(device, max_items=max_items)
     changes.append(event)
     if len(changes) > max_items:
         device["changes"] = changes[-max_items:]

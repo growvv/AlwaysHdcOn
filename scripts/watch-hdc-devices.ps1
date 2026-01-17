@@ -130,7 +130,7 @@ function Append-DeviceChange {
   param(
     [Parameter(Mandatory)]$Device,
     [Parameter(Mandatory)][hashtable]$Event,
-    [Parameter()][int]$MaxItems = 10
+    [Parameter()][int]$MaxItems = 3
   )
   $existing = Get-ObjField -Obj $Device -Name 'changes'
   $list = @()
@@ -144,6 +144,47 @@ function Append-DeviceChange {
   $list += $Event
   $list = @($list | Select-Object -Last $MaxItems)
   Set-ObjField -Obj $Device -Name 'changes' -Value $list
+}
+
+function Normalize-DeviceForWrite {
+  param(
+    [Parameter(Mandatory)]$Device,
+    [Parameter()][int]$MaxChanges = 3
+  )
+
+  $ordered = [ordered]@{}
+  $changesValue = $null
+
+  if ($Device -is [System.Collections.IDictionary]) {
+    foreach ($k in $Device.Keys) {
+      if ("$k" -eq 'changes') {
+        $changesValue = $Device[$k]
+      } else {
+        $ordered["$k"] = $Device[$k]
+      }
+    }
+  } else {
+    foreach ($p in $Device.PSObject.Properties) {
+      if ($p.Name -eq 'changes') {
+        $changesValue = $p.Value
+      } else {
+        $ordered[$p.Name] = $p.Value
+      }
+    }
+  }
+
+  $list = @()
+  if ($changesValue -and ($changesValue -is [System.Collections.IEnumerable]) -and -not ($changesValue -is [string])) {
+    foreach ($ev in $changesValue) {
+      if ($ev -is [System.Collections.IDictionary] -or $ev -is [pscustomobject]) {
+        $list += $ev
+      }
+    }
+  }
+  $list = @($list | Select-Object -Last $MaxChanges)
+  $ordered['changes'] = $list
+
+  return [pscustomobject]$ordered
 }
 
 function Record-DeviceEndpointChange {
@@ -307,7 +348,8 @@ function Save-DevicesJson {
   }
   $leaf = Split-Path -Leaf $Path
   $tmp = Join-Path $dir ".$leaf.tmp"
-  (ConvertTo-Json -InputObject @($Devices) -Depth 10) | Set-Content -LiteralPath $tmp -Encoding UTF8
+  $normalized = @($Devices | ForEach-Object { Normalize-DeviceForWrite -Device $_ -MaxChanges 3 })
+  (ConvertTo-Json -InputObject @($normalized) -Depth 10) | Set-Content -LiteralPath $tmp -Encoding UTF8
   Move-Item -LiteralPath $tmp -Destination $Path -Force
 }
 

@@ -2,7 +2,7 @@
 
 保持 OpenHarmony/HarmonyOS HDC（TCP）设备长期在线：定时检测设备是否 `Connected`，离线则自动 `tconn`，必要时扫描同 IP 其它端口与局域网候选端口，并按 `UDID` 重新映射 `ip:port`。
 
-脚本会实时维护 `config/devices.json` 中的运行时字段：`online` / `last_online_at` / `last_refresh_at` / `changes`（最近 10 条变更）。
+脚本会实时维护 `config/devices.json` 中的运行时字段：`online` / `last_online_at` / `last_refresh_at` / `changes`（最近 3 条变更）。
 
 ## 前置条件
 
