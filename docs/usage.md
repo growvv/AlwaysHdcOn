@@ -116,6 +116,54 @@ python scripts/watch-hdc-devices.py --extra-ports 5555,8710,12345
 python scripts/watch-hdc-devices.py --scan-concurrency 64 --scan-timeout 1.2 --max-scan-hosts 256
 ```
 
+## PowerShell 脚本（可选）
+
+### 运行方式
+
+```powershell
+# 默认：每 10s 检测一次（默认），持续运行
+pwsh .\scripts\watch-hdc-devices.ps1
+
+# 只跑一次
+pwsh .\scripts\watch-hdc-devices.ps1 -Once
+```
+
+### 参数说明
+
+- `-DevicesJsonPath`：设备清单路径（默认：`config/devices.json`）
+- `-StatePath`：状态文件路径（默认：`.hdc-devices.state.json`）
+- `-IntervalSeconds`：检测间隔秒数（默认：`10`）
+- `-Once`：只执行一轮就退出
+- `-EnableLanScan:$false`：关闭局域网扫描（默认开启）
+- `-EnableIpPortScan:$false`：关闭“同 IP 扫描其它端口”（默认开启）
+- `-ExtraPorts`：额外端口候选（默认：`5555,8710`；会用于同 IP 扫描与局域网扫描）
+- `-ScanTimeoutMs`：端口探测超时（毫秒，默认：`800`）
+- `-ScanThrottle`：端口探测并发数（默认：`128`）
+- `-MaxScanHosts`：最大扫描 IP 数量（默认：`1024`）
+- `-NoWriteConfig`：不把最新映射写回 `config/devices.json`
+
+### 典型配置示例
+
+```powershell
+# 更快检测
+pwsh .\scripts\watch-hdc-devices.ps1 -IntervalSeconds 5
+
+# 关闭局域网扫描
+pwsh .\scripts\watch-hdc-devices.ps1 -EnableLanScan:$false
+
+# 不写回 config（只做监控/重连）
+pwsh .\scripts\watch-hdc-devices.ps1 -NoWriteConfig
+
+# 使用 30s 守护间隔
+pwsh .\scripts\watch-hdc-devices.ps1 -IntervalSeconds 30
+
+# 增加/覆盖候选端口
+pwsh .\scripts\watch-hdc-devices.ps1 -ExtraPorts 5555,8710,12345
+
+# 调整扫描性能
+pwsh .\scripts\watch-hdc-devices.ps1 -ScanThrottle 64 -ScanTimeoutMs 1200 -MaxScanHosts 256
+```
+
 ## 注意事项 / 排错
 
 - 局域网扫描会对大量 IP 做端口探测与（少量）`tconn` 尝试；在网段很大时建议降低并发或关闭扫描。

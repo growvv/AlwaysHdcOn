@@ -24,6 +24,16 @@ python scripts/watch-hdc-devices.py --once
 python scripts/watch-hdc-devices.py --interval 30
 ```
 
+## PowerShell 版本（可选）
+
+```powershell
+# 每 10s 检测一次（默认），持续运行
+pwsh .\scripts\watch-hdc-devices.ps1
+
+# 只跑一次
+pwsh .\scripts\watch-hdc-devices.ps1 -Once
+```
+
 ## 文档
 
 - 详细使用说明与参数配置：`docs/usage.md`
