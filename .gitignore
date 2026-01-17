@@ -1,0 +1,28 @@
+# Runtime state / logs
+.hdc-devices.state.json
+logs/
+
+# Local device list (contains real UDIDs and runtime status)
+config/devices.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+
+# Temp
+*.tmp
+*.log
