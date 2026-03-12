@@ -1,39 +1,27 @@
 # AlwaysHdcOn
 
-保持 OpenHarmony/HarmonyOS HDC（TCP）设备长期在线：定时检测设备是否 `Connected`，离线则自动 `tconn`，必要时扫描同 IP 其它端口与局域网候选端口，并按 `UDID` 重新映射 `ip:port`。
+保持 OpenHarmony/HarmonyOS HDC(TCP) 设备在线的轻量守护脚本。
 
-脚本会实时维护 `config/devices.json` 中的运行时字段：`online` / `last_online_at` / `last_refresh_at` / `changes`（最近 3 条变更）。
+## 项目结构
 
-## 前置条件
+- `scripts/watch-hdc-devices.py`：主脚本（推荐，跨平台）
+- `scripts/watch-hdc-devices.ps1`：PowerShell 版本（可选）
+- `config/devices.example.json`：设备清单模板
+- `docs/usage.md`：运行参数与排障
+- `docs/devices.md`：设备清单字段说明
 
-- 已安装并可直接运行 `hdc`（在 PATH 中）
-- 设备已开启 HDC TCP（可手动用 `hdc tconn <ip:port>` 验证）
-- 初始化设备清单：复制 `config/devices.example.json` → `config/devices.json` 并填写真实 `device_id` / `udid`
-- Python 3.7+（推荐，跨平台）
-
-## 快速开始（Python）
+## 快速开始
 
 ```bash
-# 每 10s 检测一次（默认），持续运行
-python scripts/watch-hdc-devices.py
-
-# 只跑一次（用于测试）
+cp config/devices.example.json config/devices.json
 python scripts/watch-hdc-devices.py --once
-
-# 30s 守护
-python scripts/watch-hdc-devices.py --interval 30
+python scripts/watch-hdc-devices.py
 ```
 
-## PowerShell 版本（可选）
+## 设计原则
 
-```powershell
-# 每 10s 检测一次（默认），持续运行
-pwsh .\scripts\watch-hdc-devices.ps1
+- 明确输入：只依赖 `config/devices.json`、命令行参数与状态文件。
+- 明确失败：配置或状态文件格式异常时直接报错，不静默兜底。
+- 明确流程：按 `连接检查 -> tconn -> 同IP端口扫描 -> 局域网扫描` 执行。
 
-# 只跑一次
-pwsh .\scripts\watch-hdc-devices.ps1 -Once
-```
-
-## 文档
-
-- 详细使用说明与参数配置：`docs/usage.md`
+更多细节见 `docs/usage.md`。
