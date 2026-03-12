@@ -263,38 +263,9 @@ def extract_ipv4(s: str) -> Optional[str]:
         return None
 
 
-def guess_local_ipv4() -> Optional[str]:
-    # Cross-platform best-effort: UDP "connect" (no packets sent) to infer primary route.
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.connect(("8.8.8.8", 80))
-        ip = sock.getsockname()[0]
-        sock.close()
-        if ip and not ip.startswith(("127.", "169.254.")):
-            return ip
-    except Exception:
-        pass
-
-    # Fallback: hostname resolve (often returns loopback on some setups).
-    try:
-        ip = socket.gethostbyname(socket.gethostname())
-        if ip and not ip.startswith(("127.", "169.254.")):
-            return ip
-    except Exception:
-        pass
-    return None
-
-
-def candidate_networks(devices: list[dict], max_hosts: int) -> list[IPv4Network]:
+def candidate_networks(devices: list[dict]) -> list[IPv4Network]:
     nets: list[IPv4Network] = []
     seen: set[str] = set()
-
-    local_ip = guess_local_ipv4()
-    if local_ip:
-        net = ip_network(f"{local_ip}/24", strict=False)
-        if str(net) not in seen:
-            seen.add(str(net))
-            nets.append(net)
 
     for d in devices:
         ip = extract_ipv4(str(d.get("device_id", "")))
@@ -303,8 +274,6 @@ def candidate_networks(devices: list[dict], max_hosts: int) -> list[IPv4Network]
         net = ip_network(f"{ip}/24", strict=False)
         if str(net) in seen:
             continue
-        if net.num_addresses - 2 > max_hosts:
-            net = ip_network(f"{ip}/24", strict=False)
         seen.add(str(net))
         nets.append(net)
 
@@ -348,11 +317,8 @@ def find_open_ports_on_host(
         futures = {executor.submit(is_port_open, ip, port, timeout): port for port in ports}
         for future in as_completed(futures):
             port = futures[future]
-            try:
-                if future.result():
-                    open_ports.append(port)
-            except Exception:
-                continue
+            if future.result():
+                open_ports.append(port)
     return sorted(set(open_ports))
 
 
@@ -370,28 +336,23 @@ def find_open_port_hosts(
         futures = {executor.submit(is_port_open, ip, port, timeout): ip for ip in ip_addresses}
         for future in as_completed(futures):
             ip = futures[future]
-            try:
-                if future.result():
-                    open_ips.append(ip)
-            except Exception:
-                continue
+            if future.result():
+                open_ips.append(ip)
     return sorted(set(open_ips))
 
 
 def load_state(path: Path) -> dict:
     if not path.exists():
         return {"updatedAt": now_iso(), "devices": {}}
-    try:
-        state = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(state, dict):
-            raise ValueError("state is not an object")
-        state.setdefault("devices", {})
-        if not isinstance(state["devices"], dict):
-            state["devices"] = {}
-        return state
-    except Exception:
-        log("WARN", f"State file is not valid JSON, recreating: {path}")
-        return {"updatedAt": now_iso(), "devices": {}}
+    state = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(state, dict):
+        raise RuntimeError(f"State file must be a JSON object: {path}")
+    devices = state.get("devices")
+    if devices is None:
+        state["devices"] = {}
+    elif not isinstance(devices, dict):
+        raise RuntimeError(f"State file key 'devices' must be an object: {path}")
+    return state
 
 
 def save_state(path: Path, state: dict) -> None:
@@ -402,15 +363,9 @@ def save_state(path: Path, state: dict) -> None:
 def parse_ports(devices: list[dict]) -> list[int]:
     ports: set[int] = set()
     for d in devices:
-        did = str(d.get("device_id", ""))
-        m = re.search(r":(\d+)$", did)
-        if m:
-            try:
-                ports.add(int(m.group(1)))
-            except Exception:
-                pass
-    if not ports:
-        ports.add(5555)
+        _, port = split_ip_port(str(d.get("device_id", "")))
+        if port:
+            ports.add(port)
     return sorted(ports)
 
 
@@ -507,11 +462,6 @@ def main(argv: list[str]) -> int:
     state_path: Path = args.state
     state = load_state(state_path)
 
-    devices_cache = read_devices_from_json(devices_path)
-    if not devices_cache:
-        raise RuntimeError(f"No devices found in {devices_path}")
-    devices_mtime_ns_cache = devices_path.stat().st_mtime_ns
-
     log("INFO", f"Devices: {devices_path} (reloaded each loop)")
     log("INFO", f"State: {state_path}")
     log(
@@ -522,18 +472,9 @@ def main(argv: list[str]) -> int:
 
     while True:
         loop_now = now_iso()
-
-        try:
-            devices_mtime_ns = devices_path.stat().st_mtime_ns
-            devices = read_devices_from_json(devices_path)
-            if not devices:
-                raise RuntimeError(f"No devices found in {devices_path}")
-            devices_cache = devices
-            devices_mtime_ns_cache = devices_mtime_ns
-        except Exception as exc:
-            log("ERROR", f"Failed to load devices json: {exc}. Using last known devices.")
-            devices = devices_cache
-            devices_mtime_ns = devices_mtime_ns_cache
+        devices = read_devices_from_json(devices_path)
+        if not devices:
+            raise RuntimeError(f"No devices found in {devices_path}")
 
         device_by_udid: dict[str, dict] = {}
         expected_udids: set[str] = set()
@@ -747,7 +688,7 @@ def main(argv: list[str]) -> int:
                 log("WARN", f"LAN scan: {len(pending_offline)} device(s) still offline. Scanning...")
 
                 ports = ports_all
-                nets = candidate_networks(devices, max_hosts=args.max_scan_hosts)
+                nets = candidate_networks(devices)
                 ip_pool = build_ip_pool(nets, max_total_hosts=args.max_scan_hosts)
 
                 for port in ports:
@@ -823,39 +764,8 @@ def main(argv: list[str]) -> int:
             log("INFO", f"State updated: {state_path}")
 
         if devices_changed and not args.no_write_config:
-            processed_by_udid: dict[str, dict] = {}
-            for d in devices:
-                u = str(d.get("udid", "")).upper().strip()
-                if u:
-                    processed_by_udid[u] = d
-
-            devices_to_write: Optional[list[dict]] = devices
-            try:
-                current_mtime_ns = devices_path.stat().st_mtime_ns
-                if current_mtime_ns != devices_mtime_ns:
-                    try:
-                        latest_devices = read_devices_from_json(devices_path)
-                        for ld in latest_devices:
-                            lu = str(ld.get("udid", "")).upper().strip()
-                            if not lu or lu not in processed_by_udid:
-                                continue
-                            src = processed_by_udid[lu]
-                            for field in ("device_id", "udid", "online", "last_online_at", "last_refresh_at", "changes"):
-                                if field in src:
-                                    ld[field] = src[field]
-                        devices_to_write = latest_devices
-                    except Exception as exc:
-                        log(
-                            "WARN",
-                            f"Devices json changed and reload failed, skipping write this round: {exc}",
-                        )
-                        devices_to_write = None
-            except FileNotFoundError:
-                pass
-
-            if devices_to_write is not None:
-                write_devices_json_atomic(devices_path, devices_to_write)
-                log("INFO", f"Config updated: {devices_path}")
+            write_devices_json_atomic(devices_path, devices)
+            log("INFO", f"Config updated: {devices_path}")
 
         if args.once:
             return 0
