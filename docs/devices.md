@@ -16,18 +16,16 @@
 ## 字段定义
 
 - `device_id`：当前连接地址（`ip:port`）
-- `udid`：设备唯一标识（用于 IP/端口变化后的重映射）
-- `type` / `model`：可选，仅用于日志展示
+- `udid`：设备唯一标识（主去重键）
+- `type` / `model`：可选，仅展示用途
 
-## 运行时字段（脚本自动维护）
+## 运行时字段（脚本维护）
 
-- `online`：是否在线
-- `last_online_at`：最后在线时间（ISO8601）
-- `last_refresh_at`：最后刷新时间（ISO8601）
-- `changes`：变更记录（最多保留最近 3 条）
+- `online`：当前轮询是否在线
+- `last_seen_at`：最近确认在线时间（ISO8601）
+- `last_refresh_at`：最近轮询刷新时间（ISO8601）
 
-## 数据清理建议
+## 入库规则
 
-- `config/devices.json` 只保留仍在使用的设备。
-- 若调试历史过多，可清理各设备的 `changes` 字段。
-- 若缓存映射异常，可删除 `.hdc-devices.state.json` 后重跑脚本。
+- LAN 扫描仅在成功获取 `udid` 时写入 `devices.json`。
+- 发现已存在 `udid` 时更新其 `device_id`；不存在时新增。
